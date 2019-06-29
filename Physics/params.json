@@ -1,5 +1,5 @@
-{"robot_weigt": 0,
- "motor_torque": 0,
+{"robot_weight": 7,
+ "motor_torque": 1,
  "motor_efficency": 0.9,
  "gravity": 9.8,
  "stationary_friction": 0.4,
