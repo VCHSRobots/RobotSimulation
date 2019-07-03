@@ -61,6 +61,7 @@ class Swerve:
                              "flswerve": 0,
                              "blswerve": 0}
     self.z_acceleration = 0
+    self.z_friction = 0
     self.z_friction = params["rolling_friction"]
     self.z_velocity = 0
     #Diagnostic variable for z acceleration
@@ -103,10 +104,6 @@ class Swerve:
     self.updateFrameVectors()
     self.updateFrameFrictionVectors()
     #self.vectorsUnitTest()
-    # for vector in self.vectors:
-    #   print("Vector: {}: {}, {}".format(vector, self.vectors[vector].magnitude, self.vectors[vector].direction))
-    # for vector in self.resistance_vectors:
-    #   print("Resistance: {}: {}, {}".format(vector, self.resistance_vectors[vector].magnitude, self.resistance_vectors[vector].direction))
 
   def updateWheelVectors(self):
     """
@@ -142,10 +139,11 @@ class Swerve:
     """
     wheels = ["frwheel", "brwheel", "flwheel", "blwheel"]
     xy_force = Vector(0, 0)
+    self.z_acceleration = 0
     #Calculates the effects of vectors in the x, y, and z direction
     for wheel in wheels:
-      total_vector = self.vectors[wheel]+self.resistance_vectors[wheel]
-      delta_z_acceleration = total_vector.magnitude*sin(total_vector.direction-angles[wheel])
+      total_vector = self.vectors[wheel]#+self.resistance_vectors[wheel]
+      delta_z_acceleration = total_vector.magnitude*sin(total_vector.direction-angles[wheel])*torques[wheel]
       self.delta_z_accel[wheel] = delta_z_acceleration
       self.z_acceleration += delta_z_acceleration
       wheel_vector = Vector(total_vector.magnitude*cos(total_vector.direction-angles[wheel]), angles[wheel])
@@ -157,7 +155,6 @@ class Swerve:
     """
     Finds the total friction the robot faces, based off its current velocity
     """
-    #TODO: Calculate z friction here
     swerves = ["frswerve", "brswerve", "flswerve", "blswerve"]
     #Calculate the total force being applied to the frame
     friction = Vector(0, 0)
@@ -167,30 +164,24 @@ class Swerve:
       magnitude = coef*params["gravity"]*params["robot_weight"]/4
       friction += Vector(magnitude, direction)
     self.resistance_vectors["frame"] = friction
+    #Calculate z axis friction
+    if self.z_velocity > 0:
+      self.z_friction = -params["gravity"]*params["robot_weight"]*params["rolling_friction"]/2
+    elif self.z_velocity < 0:
+      self.z_friction = params["gravity"]*params["robot_weight"]*params["rolling_friction"]/2
+    else:
+      self.z_friction = 0
 
   def vectorsUnitTest(self):
     """
     Unit test for wheel vector behavior
-    Makes sure the vectors are totaling in the direction in which the joystick points
-    Only relevant if all the swerve wheels are aligned
     """
-    p = False
-    wheel_vector = self.wheel_vectors["frwheel"]+self.wheel_vectors["flwheel"]
-    back_vector = self.wheel_vectors["brwheel"]+self.wheel_vectors["blwheel"]
-    total_vector = self.wheel_vectors["frwheel"]+self.wheel_vectors["flwheel"]+self.wheel_vectors["brwheel"]+self.wheel_vectors["blwheel"]
-    #Rounds direction values to reduce precision noise
-    direction1 = round(self.wheel_vectors["frwheel"].direction, 4)
-    direction2 = round(self.wheel_vectors["flwheel"].direction, 4)
-    direction3 = round(self.wheel_vectors["brwheel"].direction, 4)
-    direction4 = round(self.wheel_vectors["blwheel"].direction, 4)
-    vector_direction = round(wheel_vector.direction, 4)
-    back_direction = round(back_vector.direction, 4)
-    joy_direction = round(self.positions["frswerve"], 4)
-    total_direction = round(total_vector.direction, 4)
-    robot_direction = round(self.vectors["frame"].direction, 4)
-    if sin(vector_direction) == sin(joy_direction) == sin(back_direction) == sin(total_direction) == sin(robot_direction) and direction1 != direction2 and direction3 != direction4:
-      p = True
-    print(p, vector_direction, joy_direction, back_direction, total_direction, robot_direction, sin(vector_direction), sin(joy_direction), sin(back_direction), sin(total_direction), sin(robot_direction), back_direction, robot_direction, direction1, direction2, direction3, direction4)
+    passing = "Failing"
+    if self.delta_z_accel["frwheel"]+self.delta_z_accel["flwheel"]+self.delta_z_accel["brwheel"]+self.delta_z_accel["blwheel"] == 0:
+      passing = "Passing"
+    print("Unit Test {}".format(passing))
+    print("frwheel: {} flwheel: {} brwheel: {} blwheel: {}".format(self.delta_z_accel["frwheel"], self.delta_z_accel["flwheel"], self.delta_z_accel["brwheel"], self.delta_z_accel["blwheel"]))
+    print("Total Delta Z: {}".format(self.delta_z_accel["frwheel"]+self.delta_z_accel["flwheel"]+self.delta_z_accel["brwheel"]+self.delta_z_accel["blwheel"]))
 
   def updateVelocities(self, delta_time):
     self.updateWheelVelocities(delta_time)
@@ -218,8 +209,7 @@ class Swerve:
     delta_x = total_vector.magnitude*cos(total_vector.direction)*delta_time
     delta_y = total_vector.magnitude*sin(total_vector.direction)*delta_time
     #TODO: Update this to be based off accurate friction measurements
-    delta_z = (self.z_acceleration-self.z_friction)*delta_time
-    print("delta z: {}".format(delta_z))
+    delta_z = (self.z_acceleration+self.z_friction)*delta_time
     self.velocities["frame"][0] += delta_x
     self.velocities["frame"][1] += delta_y
     self.z_velocity += delta_z
@@ -231,9 +221,10 @@ class Swerve:
       if ((delta_y > 0 and self.velocities["frame"][1] > 0) or (delta_y < 0 and self.velocities["frame"][1] < 0)):
         self.velocities["frame"][1] = 0
     if abs(self.z_acceleration) < abs(self.z_friction):
-      print("Friction dominates rotation")
-      if (delta_z > 0 and self.z_velocity > 0) or (delta_z < 0 and self.z_velocity < 0):
+      if (self.z_friction > 0 and self.z_velocity > 0) or (self.z_friction < 0 and self.z_velocity < 0):
+        print("Z velocity set to 0", ">>>\n"*10)
         self.z_velocity = 0
+    print("z_velocity: {}\nz_acceleration: {}\nz_friction: {}\ndelta_z: {}".format(self.z_velocity, self.z_acceleration, self.z_friction, delta_z))
 
   def velocityUnitTest(self, delta_time):
     """
@@ -309,14 +300,14 @@ params = loadParams()
 #Wheel distances from robot center of gravity
 #Used for calculating robot spin
 #TODO: Fix these distance formulas
-frtorque = sqrt((params["wheel_offset_x"]/2-params["cgoffset_x"])**2
-                + (params["wheel_offset_y"]/2-params["cgoffset_y"])**2)
-brtorque = sqrt((params["wheel_offset_x"]/2-params["cgoffset_x"])**2
-                + (params["wheel_offset_y"]/2+params["cgoffset_y"])**2)
-fltorque = sqrt((params["wheel_offset_x"]/2+params["cgoffset_x"])**2
-                + (params["wheel_offset_y"]/2-params["cgoffset_y"])**2)
-bltorque = sqrt((params["wheel_offset_x"]/2+params["cgoffset_x"])**2
-                + (params["wheel_offset_y"]/2+params["cgoffset_y"])**2)
+torques = {"frwheel": (sqrt((params["wheel_offset_x"]/2-params["cgoffset_x"])**2
+                       + (params["wheel_offset_y"]/2-params["cgoffset_y"])**2)),
+           "brwheel": (sqrt((params["wheel_offset_x"]/2-params["cgoffset_x"])**2
+                       + (params["wheel_offset_y"]/2+params["cgoffset_y"])**2)),
+           "flwheel": (-sqrt((params["wheel_offset_x"]/2+params["cgoffset_x"])**2
+                       + (params["wheel_offset_y"]/2-params["cgoffset_y"])**2)),
+           "blwheel": (-sqrt((params["wheel_offset_x"]/2+params["cgoffset_x"])**2
+                       + (params["wheel_offset_y"]/2+params["cgoffset_y"])**2))}
 #Cartesian distances from center of gravity
 frdist = (params["wheel_offset_x"]/2-params["cgoffset_x"],
           params["wheel_offset_y"]/2-params["cgoffset_y"])
@@ -327,7 +318,9 @@ fldist = (-(params["wheel_offset_x"]/2+params["cgoffset_x"]),
 bldist = (-(params["wheel_offset_x"]/2+params["cgoffset_x"]),
           -(params["wheel_offset_y"]/2+params["cgoffset_y"]))
 #Angles of the lines propigated between the center of gravity and wheel locations
+#Angles should be the same between diagonally aligned wheels
+#since their forces both should be transposed on the same vectors
 angles = {"frwheel": atan2(frdist[1], frdist[0]),
-          "brwheel": atan2(brdist[1], brdist[0]),
+          "brwheel": atan2(fldist[1], fldist[0]),
           "flwheel": atan2(fldist[1], fldist[0]),
-          "blwheel": atan2(bldist[1], bldist[0])}
+          "blwheel": atan2(frdist[1], frdist[0])}
