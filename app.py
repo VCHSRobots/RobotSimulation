@@ -58,10 +58,8 @@ class Simulator(ShowBase):
     self.textNodes = {}
     self.textNodePaths = {}
     self.default_text_scale = default_text_scale
-    # for node in textNodeNames:
-    #   self.textNodes[node] = TextNode(node)
-    #   self.textNodePaths[node] = self.aspect2d.attachNewNode(self.textNodes[node])
-    #Line drawer for drawing graphs
+    #Geometry drawing node
+    self.geom_node = GeomNode("drawer")
     self.text_is_active = True
     #If the text toggle button has been up for more than one frame
     self.text_button_lifted = True
@@ -76,7 +74,7 @@ class Simulator(ShowBase):
     self.taskMgr.add(self.update2dDisplay, "update2dDisplay")
     self.taskMgr.add(self.toggleText, "toggleText")
     #Creates a graph of y vectors
-    self.y_graph = graphs.Graph()
+    self.y_graph = graphs.XYGraph(location = (-.4, -.4))
 
   def walkPanda(self, task):
     x = self.joystick_readings[0]["axes"]["left_x"]
@@ -146,28 +144,23 @@ class Simulator(ShowBase):
       for ind, val in enumerate(strings):
         location, string = val
         self.textboxes["{}_{}".format(self.y_graph.name, str(ind))] = {"location": location, "text": string}
-      self.manageGeomNodes()
+      self.manageGeometry()
       self.manageTextNodes()
       self.renderText()
     return Task.cont
 
-  def manageGeomNodes(self):
+  def manageGeometry(self):
     """
     Manages nodes for geometry generation
     Unlike text nodes, each line is destroyed and re-rendered every frame, given it still exists in self.lines
     This helps with more dynamic geometries such as graphs
     A static geometry class may be implemented for lines which do not need to be rendered every frame
     """
-    #This should allow the old nodes to be garbage collected
-    for path in self.lineNodePaths:
-      path.removeNode()
-    self.lineNodes = []
-    self.lineNodePaths = []
+    #Removes all lines from the geometry node
+    self.geom_node.removeAllGeoms()
     #(Re)Renders all the lines which are in self.lines
     for line in self.lines:
-      node, path = self.addLine(line)
-      self.lineNodes.append(node)
-      self.lineNodePaths.append(path)
+      self.addLine(line)
 
   def addLine(self, points):
     """
@@ -183,16 +176,14 @@ class Simulator(ShowBase):
       writer.add_data3f(point[0], 0, point[1])
     #Defines that this geometry represents a polyline
     primitive = GeomLinestrips(Geom.UHStatic)
-    geom_node = GeomNode("node")
     #Tells geometry how many verticies will be added(?)
     primitive.add_consecutive_vertices(0, 2)
     primitive.close_primitive()
     geometry = Geom(vertex_data)
     geometry.add_primitive(primitive)
     #Draws a graph on the HUD
-    geom_node.add_geom(geometry)
-    node_path = self.aspect2d.attach_new_node(geom_node)
-    return geom_node, node_path
+    self.geom_node.add_geom(geometry)
+    self.aspect2d.attach_new_node(self.geom_node)
 
   def manageTextNodes(self):
     deleted = []
