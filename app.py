@@ -10,13 +10,15 @@ from direct.showbase.Loader import Loader
 from direct.task import Task
 from direct.actor.Actor import Actor
 from direct.interval.IntervalGlobal import Sequence
-from panda3d.core import Point3, InputDevice, TextNode
+from direct.gui.OnscreenImage import OnscreenImage
+from panda3d.core import Point3, InputDevice, TextNode, TransparencyAttrib, LineSegs, GeomNode, GeomVertexFormat, GeomVertexData, GeomVertexWriter, Geom, GeomLinestrips
 
 import Input.joy as joy
+import VisualAssets.graphs as graphs
 import Physics.primitivePhysics as physics
 
 class Simulator(ShowBase):
-  def __init__(self):
+  def __init__(self, textboxes = ({}), default_text_scale = .07):
     ShowBase.__init__(self)
 
     self.joys = self.devices.getDevices(InputDevice.DeviceClass.gamepad)
@@ -41,15 +43,25 @@ class Simulator(ShowBase):
     self.pandaActor.reparentTo(self.render)
     self.pandaLocation = [0, 0, 0]
     self.setPandaToLocation()
-    #Text display objects
-    textNodeNames = ["frvector_label",
-                     "frvector_value"]
+    #Lines to be rendered on the next frame
+    self.lines = []
+    self.lineNodes = []
+    self.lineNodePaths = []
+    #Text boxes which will be rendered every frame
+    #Key is a node name, value is a dict with
+    #arguments such as text, location, and scale
+    #Hack to keep default argument immutable and prevent bugs
+    if type(textboxes) == tuple:
+      self.textboxes = textboxes[0]
+    else:
+      self.textboxes = textboxes
     self.textNodes = {}
     self.textNodePaths = {}
-    for node in textNodeNames:
-      self.textNodes[node] = TextNode(node)
-      self.textNodePaths[node] = self.aspect2d.attachNewNode(self.textNodes[node])
-    self.setupTextNodes()
+    self.default_text_scale = default_text_scale
+    # for node in textNodeNames:
+    #   self.textNodes[node] = TextNode(node)
+    #   self.textNodePaths[node] = self.aspect2d.attachNewNode(self.textNodes[node])
+    #Line drawer for drawing graphs
     self.text_is_active = True
     #If the text toggle button has been up for more than one frame
     self.text_button_lifted = True
@@ -63,13 +75,8 @@ class Simulator(ShowBase):
     self.taskMgr.add(self.walkPandaToPhysics, "walkPandaToPhysics")
     self.taskMgr.add(self.update2dDisplay, "update2dDisplay")
     self.taskMgr.add(self.toggleText, "toggleText")
-
-  def setupTextNodes(self):
-    for node in self.textNodes:
-      self.textNodePaths[node].setScale(0.07)
-    self.textNodePaths["frvector_label"].setPos(.5, 0, .8)
-    self.textNodePaths["frvector_value"].setPos(.5, 0, .7)
-    self.textNodes["frvector_label"].setText("Front Right Wheel")
+    #Creates a graph of y vectors
+    self.y_graph = graphs.Graph()
 
   def walkPanda(self, task):
     x = self.joystick_readings[0]["axes"]["left_x"]
@@ -100,6 +107,7 @@ class Simulator(ShowBase):
     angle = self.physics.position[2]*(180/pi)
     self.setPandaToLocation()
     self.pandaActor.setHpr(angle+180, 0, 0)
+    self.y_graph.update(self.physics.velocities["frame"][1])
     return Task.cont
 
   def setPandaToLocation(self):
@@ -116,17 +124,104 @@ class Simulator(ShowBase):
     """
     Updates the 2d heads-up overlay
     """
-    frvector = "Mag: {}\nDir: {}\nTheta_acc: {}\nVel_x: {}\nVel_y: {}\nVel_t: {}\nPos: {}, {}\nRot: {}".format(round(self.physics.vectors["frame"].magnitude, 4),
-                                                  round(self.physics.vectors["frame"].direction, 4),
-                                                  round(self.physics.z_acceleration, 4),
-                                                  round(self.physics.velocities["frame"][0], 4),
-                                                  round(self.physics.velocities["frame"][1], 4),
-                                                  round(self.physics.z_velocity, 4),
-                                                  round(self.physics.position[0], 4),
-                                                  round(self.physics.position[1], 4),
-                                                  round(self.physics.position[2], 4))
-    self.textNodes["frvector_value"].setText(frvector)
+    if self.text_is_active:
+      frvector = "Mag: {}\nDir: {}\nTheta_acc: {}\nVel_x: {}\nVel_y: {}\nVel_t: {}\nPos: {}, {}\nRot: {}".format(round(self.physics.vectors["frame"].magnitude, 4),
+                                                    round(self.physics.vectors["frame"].direction, 4),
+                                                    round(self.physics.z_acceleration, 4),
+                                                    round(self.physics.velocities["frame"][0], 4),
+                                                    round(self.physics.velocities["frame"][1], 4),
+                                                    round(self.physics.z_velocity, 4),
+                                                    round(self.physics.position[0], 4),
+                                                    round(self.physics.position[1], 4),
+                                                    round(self.physics.position[2], 4))
+      self.textboxes["frvector_value"]["text"] = frvector
+      lines, strings = self.y_graph.render()
+      #Input Reference
+      #[[[[0, 0], [.5, .5], [0, .5]], [[0, 0], [0, .5]]], [[(.1, 0), "Hello World"]]]
+      #Splits the lines into pairs of points and assigns them to self.lines
+      self.lines = []
+      for line in lines:
+        self.lines += pairPoints(line)
+      #Processes strings into textboxes
+      for ind, val in enumerate(strings):
+        location, string = val
+        self.textboxes["{}_{}".format(self.y_graph.name, str(ind))] = {"location": location, "text": string}
+      self.manageGeomNodes()
+      self.manageTextNodes()
+      self.renderText()
     return Task.cont
+
+  def manageGeomNodes(self):
+    """
+    Manages nodes for geometry generation
+    Unlike text nodes, each line is destroyed and re-rendered every frame, given it still exists in self.lines
+    This helps with more dynamic geometries such as graphs
+    A static geometry class may be implemented for lines which do not need to be rendered every frame
+    """
+    #This should allow the old nodes to be garbage collected
+    for path in self.lineNodePaths:
+      path.removeNode()
+    self.lineNodes = []
+    self.lineNodePaths = []
+    #(Re)Renders all the lines which are in self.lines
+    for line in self.lines:
+      node, path = self.addLine(line)
+      self.lineNodes.append(node)
+      self.lineNodePaths.append(path)
+
+  def addLine(self, points):
+    """
+    Adds a line to the display from a pair of points
+    Returns the GeomNode and NodePath for the line
+    """
+    #Creates objects needed to draw a geometry on the HUD
+    #The vertex data which will define the rendered geometry
+    vertex_data = GeomVertexData("graph", GeomVertexFormat.getV3(), Geom.UHStatic)
+    #The object that writes vertexes the vertex data
+    writer = GeomVertexWriter(vertex_data, "vertex")
+    for point in points:
+      writer.add_data3f(point[0], 0, point[1])
+    #Defines that this geometry represents a polyline
+    primitive = GeomLinestrips(Geom.UHStatic)
+    geom_node = GeomNode("node")
+    #Tells geometry how many verticies will be added(?)
+    primitive.add_consecutive_vertices(0, 2)
+    primitive.close_primitive()
+    geometry = Geom(vertex_data)
+    geometry.add_primitive(primitive)
+    #Draws a graph on the HUD
+    geom_node.add_geom(geometry)
+    node_path = self.aspect2d.attach_new_node(geom_node)
+    return geom_node, node_path
+
+  def manageTextNodes(self):
+    deleted = []
+    for name in self.textboxes:
+      if name not in self.textNodes:
+        #If the name has not been given a textNode object, set it up
+        self.textNodes[name] = TextNode(name)
+        self.textNodePaths[name] = self.aspect2d.attachNewNode(self.textNodes[name])
+    #Checks if any textNodes no longer have their respective textbox object and should be deleted
+    for name in self.textNodes:
+      if name not in self.textboxes:
+        deleted.append(name)
+    for node in deleted:
+      self.aspect2d.removeNode(self.textNodePaths[node])
+    
+  def renderText(self):
+    for name in self.textboxes:
+      if "location" in self.textboxes[name]:
+        location = self.textboxes[name]["location"]
+      else:
+        location = (0, 0)
+      if "scale" in self.textboxes[name]:
+        scale = self.textboxes[name]["scale"]
+      else:
+        scale = self.default_text_scale
+      if "text" in self.textboxes[name]:
+        self.textNodes[name].setText(self.textboxes[name]["text"])
+      self.textNodePaths[name].setScale(scale)
+      self.textNodePaths[name].setPos(location[0], 0, location[1])
 
   def toggleText(self, task):
     if self.joystick_readings[0]["axes"]["right_trigger"] >= .05 and self.text_button_lifted:
@@ -136,13 +231,36 @@ class Simulator(ShowBase):
     elif not self.joystick_readings[0]["axes"]["right_trigger"] >= .05:
       self.text_button_lifted = True
     if not self.text_toggled:
-      if self.text_is_active:
+      if not self.text_is_active:
         for path in self.textNodePaths:
           self.textNodePaths[path].detachNode()
+        for path in self.lineNodePaths:
+          path.detachNode()
       else:
         for node in self.textNodes:
           self.textNodePaths[node] = self.aspect2d.attachNewNode(self.textNodes[node])
+        for node in self.lineNodes:
+          self.aspect2d.attachNewNode(node)
     return Task.cont
 
-app = Simulator()
+def pairPoints(points, closed=False):
+  """
+  Seperates a series of points into a series of lines connecting the points
+  """
+  pairs = []
+  for ind, point in enumerate(points):
+    if ind == len(points)-1:
+      #If on the last point of the set
+      #break the loop or link back to the start
+      #depending on arguments
+      if closed:
+        pairs.append((point, points[0]))
+      else:
+        break
+    else:
+      #If not on the last point, add the next line as a pair of points
+      pairs.append((point, points[ind+1]))
+  return pairs
+
+app = Simulator(textboxes={"frvector_label": {}, "frvector_value": {"location": (.4, .7)}})
 app.run()

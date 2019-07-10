@@ -8,6 +8,7 @@ from math import sin, cos, sqrt, atan2
 class Vector:
   def __init__(self, magnitude = None, direction = None, component = None):
     if component != None:
+      #component should be a 2-tuple with X, Y component
       self.component = component
       self.magnitude = sqrt(component[0]**2 + component[1]**2)
       self.direction = atan2(component[1], component[0])

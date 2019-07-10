@@ -121,7 +121,7 @@ class Swerve:
         self.vectors[wheel].setDirection(0)
         continue
       self.vectors[wheel].setMagnitude(params["voltage"]*params["max_current"]*self.motor_velocities[wheel]
-                                          *params["motor_efficency"]/params["robot_weight"])
+                                      *params["motor_efficency"]/params["robot_weight"])
       self.vectors[wheel].setDirection(self.positions[swerves[ind]])
 
   def updateWheelFrictionVectors(self):
@@ -222,9 +222,8 @@ class Swerve:
         self.velocities["frame"][1] = 0
     if abs(self.z_acceleration) < abs(self.z_friction):
       if (self.z_friction > 0 and self.z_velocity > 0) or (self.z_friction < 0 and self.z_velocity < 0):
-        print("Z velocity set to 0", ">>>\n"*10)
         self.z_velocity = 0
-    print("z_velocity: {}\nz_acceleration: {}\nz_friction: {}\ndelta_z: {}".format(self.z_velocity, self.z_acceleration, self.z_friction, delta_z))
+    #print("z_velocity: {}\nz_acceleration: {}\nz_friction: {}\ndelta_z: {}".format(self.z_velocity, self.z_acceleration, self.z_friction, delta_z))
 
   def velocityUnitTest(self, delta_time):
     """
