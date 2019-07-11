@@ -75,6 +75,8 @@ class Simulator(ShowBase):
     self.taskMgr.add(self.toggleText, "toggleText")
     #Creates a graph of y vectors
     self.y_graph = graphs.XYGraph(location = (-.4, -.4))
+    #Adds dummy value to graph to prevent crash
+    self.y_graph.update(self.physics.velocities["frame"][1])
 
   def walkPanda(self, task):
     x = self.joystick_readings[0]["axes"]["left_x"]
@@ -141,6 +143,13 @@ class Simulator(ShowBase):
       for line in lines:
         self.lines += pairPoints(line)
       #Processes strings into textboxes
+      #Clears all graph generated strings from textboxes
+      deleted = []
+      for key in self.textboxes:
+        if self.y_graph.name in key:
+          deleted.append(key)
+      for key in deleted:
+        self.textboxes.pop(key)
       for ind, val in enumerate(strings):
         location, string = val
         self.textboxes["{}_{}".format(self.y_graph.name, str(ind))] = {"location": location, "text": string}
@@ -197,7 +206,9 @@ class Simulator(ShowBase):
       if name not in self.textboxes:
         deleted.append(name)
     for node in deleted:
-      self.aspect2d.removeNode(self.textNodePaths[node])
+      self.textNodePaths[node].removeNode()
+      self.textNodePaths.pop(node)
+      self.textNodes.pop(node)
     
   def renderText(self):
     for name in self.textboxes:
