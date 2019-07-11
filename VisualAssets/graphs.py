@@ -26,11 +26,11 @@ class Graph:
     """
 
 class XYGraph(Graph):
-  def __init__(self, name = "graph", location = (0, 0),
-               graph_size = (.9, .9), x_tick_space = 2, ideal_num_ticks = 10,
+  def __init__(self, name = "graph", location = (0, 0), graph_size = (.9, .9),
+               x_tick_space = 2, ideal_num_ticks = 8, ideal_tick_buffer = .1,
                x_range = 10, x_axis_name = "Time", y_axis_name = "Value",
-               buffer_size = .1, tick_length = .1, number_spacing = .1, decimals = 1,
-               data_edge_buffer = .1):
+               buffer_size = .1, tick_length = .1, number_spacing = .1,
+               decimals = 1, data_edge_buffer = .1):
     #Reference name for use outside graph
     self.name = name
     #The location the graph will render on the screen
@@ -52,6 +52,9 @@ class XYGraph(Graph):
     self.x_tick_space = x_tick_space
     #The ideal tick number on the y axis, since it is dynamic
     self.ideal_num_ticks = ideal_num_ticks
+    #The ideal buffer from the bottom and top of the screen
+    #A percentage of the max/min data values which change based on input
+    self.ideal_tick_buffer = ideal_tick_buffer
     #Saves visual distance between each graph unit
     self.x_distance_per_value = self.graph_size[0]/self.x_range
     #This will be defined by the dynamic tick creator
@@ -119,14 +122,10 @@ class XYGraph(Graph):
     self.y_distance_per_value = self.graph_size[1]/y_range
     #Visual distance between each tick
     distance_per_tick = tick_interval*self.y_distance_per_value
+    #Calculates tick locations
     for num in range(num_ticks):
       tick_locations.append((tick_origin[0], tick_origin[1]+distance_per_tick*num))
-    tick_values = frange(y_min, y_max, tick_interval)
-    #TODO: Check this unit test
-    passed = False
-    if len(tick_values) == num_ticks:
-      passed = True
-    print("Tick count unit test {}. (num_ticks = {}, len(tick_values) = {})".format("passed" if passed else "failed", num_ticks, len(tick_values)))
+    tick_values = frange(y_min, y_max+tick_interval, tick_interval)
     return tick_locations, tick_values, y_range
 
   def getTickInterval(self, rough_max, rough_min):
@@ -136,22 +135,21 @@ class XYGraph(Graph):
     #TODO: Debug this
     rough_range = rough_max-rough_min
     #Finds about how large/small the scale of the graph should be
-    if rough_range == 0:
+    if -.00001 <= rough_range <= .00001:
       rough_range = 1
     scale = log(rough_range, 10)
-    print(scale)
     #Determines if scale is indecicive enough to check it rounded both up and down
     #This feature may be removed for efficency
-    # if .4 < scale%1 < .6:
-    #   choices = []
-    #   for scale in (floor(scale), ceil(scale)):
-    #     choices.append(self.getTickIntervalAtScale(rough_max, rough_min, scale))
-    #   if choices[0][3]-self.ideal_num_ticks < choices[1][3]-self.ideal_num_ticks:
-    #     real_max, real_min, best_interval, num_ticks = choices[0]
-    #   else:
-    #     real_max, real_min, best_interval, num_ticks = choices[1]
-    # else:
-    real_max, real_min, best_interval, num_ticks = self.getTickIntervalAtScale(rough_max, rough_min, floor(scale))
+    if .2 < scale%1 < .8:
+      choices = []
+      for scale in (floor(scale), ceil(scale)):
+        choices.append(self.getTickIntervalAtScale(rough_max, rough_min, scale))
+      if choices[0][4] < choices[1][4]:
+        real_max, real_min, best_interval, num_ticks, _ = choices[0]
+      else:
+        real_max, real_min, best_interval, num_ticks, _ = choices[1]
+    else:
+      real_max, real_min, best_interval, num_ticks, _ = self.getTickIntervalAtScale(rough_max, rough_min, round(scale))
     return real_max, real_min, best_interval, floor(num_ticks)
 
   def getTickIntervalAtScale(self, rough_max, rough_min, scale):
@@ -164,15 +162,19 @@ class XYGraph(Graph):
     for interval in intervals:
       interval_max, interval_min = (rough_max//interval+1)*interval, (rough_min//interval-1)*interval
       interval_range = interval_max-interval_min
-      num_ticks = interval_range/interval
+      num_ticks = (interval_range/interval)+1
       #Difference betweeen ideal number of ticks and number proposed by interval
-      delta = abs(self.ideal_num_ticks-num_ticks)
+      #TODO: Adjust these equasions to adjust the weight of delta buffer and tick num
+      delta_tick_num_weight = 7
+      delta_buffer_weight = .4
+      delta_tick_num = abs(self.ideal_num_ticks-num_ticks)
+      delta_buffer = (abs((interval_max-rough_max)-(rough_max*(1+self.ideal_tick_buffer))
+                     +abs((rough_min-interval_min)-(rough_min*(1-self.ideal_tick_buffer)))))
       choices.append((interval_max, interval_min, interval, num_ticks))
-      deltas.append(delta)
-      print("rough_max: {}\nrough_min: {}\n interval_max: {}\ninterval_min: {}\ninterval: {}\ndelta: {}\n".format(rough_max, rough_min, interval_max, interval_min, interval, delta))
+      deltas.append(delta_tick_num*delta_tick_num_weight+delta_buffer*delta_buffer_weight)
     choice_ind = deltas.index(min(deltas))
     real_max, real_min, interval, num_ticks = choices[choice_ind]
-    return real_max, real_min, interval, num_ticks
+    return real_max, real_min, interval, num_ticks, min(deltas)
 
   def render(self):
     """
@@ -243,7 +245,7 @@ class XYGraph(Graph):
     Draws tick marks
     """
     for x_tick in self.x_tick_locations:
-      self.points.append((x_tick, (x_tick[0], x_tick[1]-self.tick_length)))
+      self.points.append((x_tick, (x_tick[0], x_tick[1]+self.tick_length)))
     for y_tick in y_tick_locations:
       self.points.append((y_tick, (y_tick[0]+self.tick_length, y_tick[1])))
 
@@ -283,7 +285,6 @@ class XYGraph(Graph):
     points = []
     graph_shift = graph_start_time-self.start_time
     for x in data:
-      #print("y: {} tick_min: {}, tick_range: {}".format(data[x], tick_min, y_tick_range))
       y = (data[x]-tick_min)#/y_tick_range
       #Transform x relative to time graph was created
       x -= self.start_time+graph_shift

@@ -60,6 +60,7 @@ class Simulator(ShowBase):
     self.default_text_scale = default_text_scale
     #Geometry drawing node
     self.geom_node = GeomNode("drawer")
+    self.aspect2d.attach_new_node(self.geom_node)
     self.text_is_active = True
     #If the text toggle button has been up for more than one frame
     self.text_button_lifted = True
@@ -124,6 +125,8 @@ class Simulator(ShowBase):
     """
     Updates the 2d heads-up overlay
     """
+    #Removes all lines from the geometry node
+    self.geom_node.removeAllGeoms()
     if self.text_is_active:
       frvector = "Mag: {}\nDir: {}\nTheta_acc: {}\nVel_x: {}\nVel_y: {}\nVel_t: {}\nPos: {}, {}\nRot: {}".format(round(self.physics.vectors["frame"].magnitude, 4),
                                                     round(self.physics.vectors["frame"].direction, 4),
@@ -153,28 +156,22 @@ class Simulator(ShowBase):
       for ind, val in enumerate(strings):
         location, string = val
         self.textboxes["{}_{}".format(self.y_graph.name, str(ind))] = {"location": location, "text": string}
-      self.manageGeometry()
       self.manageTextNodes()
       self.renderText()
+      self.manageGeometry()
     return Task.cont
 
   def manageGeometry(self):
     """
-    Manages nodes for geometry generation
-    Unlike text nodes, each line is destroyed and re-rendered every frame, given it still exists in self.lines
-    This helps with more dynamic geometries such as graphs
-    A static geometry class may be implemented for lines which do not need to be rendered every frame
+    Manages geometry generation
     """
-    #Removes all lines from the geometry node
-    self.geom_node.removeAllGeoms()
     #(Re)Renders all the lines which are in self.lines
     for line in self.lines:
       self.addLine(line)
 
   def addLine(self, points):
     """
-    Adds a line to the display from a pair of points
-    Returns the GeomNode and NodePath for the line
+    Adds a line to class GeomNode from a pair of points
     """
     #Creates objects needed to draw a geometry on the HUD
     #The vertex data which will define the rendered geometry
@@ -192,7 +189,6 @@ class Simulator(ShowBase):
     geometry.add_primitive(primitive)
     #Draws a graph on the HUD
     self.geom_node.add_geom(geometry)
-    self.aspect2d.attach_new_node(self.geom_node)
 
   def manageTextNodes(self):
     deleted = []
