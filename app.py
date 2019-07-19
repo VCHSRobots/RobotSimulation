@@ -3,22 +3,25 @@ app.py: The Panda3D app class which the robot simulator runs from
 6/27/2019 Holiday Pettijohn
 """
 
-from math import pi, sin, cos, atan2, sqrt
+from math import atan2, cos, pi, sin, sqrt
 
-from direct.showbase.ShowBase import ShowBase
-from direct.showbase.Loader import Loader
-from direct.task import Task
 from direct.actor.Actor import Actor
-from direct.interval.IntervalGlobal import Sequence
 from direct.gui.OnscreenImage import OnscreenImage
-from panda3d.core import Point3, InputDevice, TextNode, TransparencyAttrib, LineSegs, GeomNode, GeomVertexFormat, GeomVertexData, GeomVertexWriter, Geom, GeomLinestrips
+from direct.interval.IntervalGlobal import Sequence
+from direct.showbase.Loader import Loader
+from direct.showbase.ShowBase import ShowBase
+from direct.task import Task
+from panda3d.core import (Geom, GeomLinestrips, GeomNode, GeomVertexData,
+                          GeomVertexFormat, GeomVertexWriter, InputDevice,
+                          LineSegs, Point3, TextNode, TransparencyAttrib)
 
 import Input.joy as joy
-import VisualAssets.graphs as graphs
 import Physics.primitivePhysics as physics
+import VisualAssets.graphs as graphs
+
 
 class Simulator(ShowBase):
-  def __init__(self, textboxes = ({}), default_text_scale = .07):
+  def __init__(self, textboxes = ({}), default_text_scale = .07, graph_objs = {}):
     ShowBase.__init__(self)
 
     self.joys = self.devices.getDevices(InputDevice.DeviceClass.gamepad)
@@ -75,9 +78,10 @@ class Simulator(ShowBase):
     self.taskMgr.add(self.update2dDisplay, "update2dDisplay")
     self.taskMgr.add(self.toggleText, "toggleText")
     #Creates a graph of y vectors
-    self.y_graph = graphs.XYGraph(location = (-.4, -.4))
+    self.graphs = graph_objs
     #Adds dummy value to graph to prevent crash
-    self.y_graph.update(self.physics.velocities["frame"][1])
+    for graph_name in self.graphs:
+      self.graphs[graph_name].update(0)
 
   def walkPanda(self, task):
     x = self.joystick_readings[0]["axes"]["left_x"]
@@ -108,7 +112,7 @@ class Simulator(ShowBase):
     angle = self.physics.position[2]*(180/pi)
     self.setPandaToLocation()
     self.pandaActor.setHpr(angle+180, 0, 0)
-    self.y_graph.update(self.physics.velocities["frame"][1])
+    self.graphs["y_graph"].update(self.physics.velocities["frame"][1])
     return Task.cont
 
   def setPandaToLocation(self):
@@ -138,24 +142,41 @@ class Simulator(ShowBase):
                                                     round(self.physics.position[1], 4),
                                                     round(self.physics.position[2], 4))
       self.textboxes["frvector_value"]["text"] = frvector
-      lines, strings = self.y_graph.render()
-      #Input Reference
-      #[[[[0, 0], [.5, .5], [0, .5]], [[0, 0], [0, .5]]], [[(.1, 0), "Hello World"]]]
-      #Splits the lines into pairs of points and assigns them to self.lines
       self.lines = []
-      for line in lines:
-        self.lines += pairPoints(line)
-      #Processes strings into textboxes
-      #Clears all graph generated strings from textboxes
-      deleted = []
-      for key in self.textboxes:
-        if self.y_graph.name in key:
-          deleted.append(key)
-      for key in deleted:
-        self.textboxes.pop(key)
-      for ind, val in enumerate(strings):
-        location, string = val
-        self.textboxes["{}_{}".format(self.y_graph.name, str(ind))] = {"location": location, "text": string}
+      #TODO: Make app integration with graph module smoother
+      #TODO: Test me!
+      for graph_name in self.graphs:
+        lines, strings = self.graphs[graph_name].render()
+        #Splits the lines into pairs of points and assigns them to self.lines
+        for line in lines:
+          self.lines += pairPoints(line)
+        #Clears all graph generated strings from textboxes
+        deleted = []
+        for key in self.textboxes:
+          if graph_name in key:
+            deleted.append(key)
+        for key in deleted:
+          self.textboxes.pop(key)
+        #Processes strings into textboxes
+        for ind, val in enumerate(strings):
+          location, string = val
+          self.textboxes["{}_{}".format(graph_name, str(ind))] = {"location": location, "text": string}
+      # lines, strings = self.y_graph.render()
+      # #Splits the lines into pairs of points and assigns them to self.lines
+      # self.lines = []
+      # for line in lines:
+      #   self.lines += pairPoints(line)
+      # #Processes strings into textboxes
+      # #Clears all graph generated strings from textboxes
+      # deleted = []
+      # for key in self.textboxes:
+      #   if self.y_graph.name in key:
+      #     deleted.append(key)
+      # for key in deleted:
+      #   self.textboxes.pop(key)
+      # for ind, val in enumerate(strings):
+      #   location, string = val
+      #   self.textboxes["{}_{}".format(self.y_graph.name, str(ind))] = {"location": location, "text": string}
       self.manageTextNodes()
       self.renderText()
       self.manageGeometry()
@@ -260,5 +281,5 @@ def pairPoints(points, closed=False):
       pairs.append((point, points[ind+1]))
   return pairs
 
-app = Simulator(textboxes={"frvector_label": {}, "frvector_value": {"location": (.4, .7)}})
+app = Simulator(textboxes={"frvector_label": {}, "frvector_value": {"location": (.4, .7)}}, graph_objs = {"y_graph": graphs.XYGraph(location=(-.4,-.4))})
 app.run()

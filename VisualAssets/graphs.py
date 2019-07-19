@@ -3,10 +3,12 @@ graphs.py: Generates a graph image based off two related axes of data
 6/27/2019 Holiday Pettijohn
 """
 
-from PIL import Image, ImageDraw, ImageColor
-from time import time
 from collections import OrderedDict
-from math import log, ceil, floor, pi
+from math import ceil, cos, floor, log, pi, sin
+from time import time
+
+from PIL import Image, ImageColor, ImageDraw
+
 
 class Graph:
   def __init__(self):
@@ -73,7 +75,7 @@ class XYGraph(Graph):
     #Length of each tick
     self.tick_length = tick_length
     #Each list within the points list is a line/polyline
-    #Each tuple in the list is a point
+    #Each tuple in the nested list is a point
     self.points = []
     #Strings are stored as (location, string) pairs
     self.strings = []
@@ -112,9 +114,9 @@ class XYGraph(Graph):
     tick_origin = self.graph_origin
     tick_locations = []
     #Finds how many y values are represented by the graph
-    rough_y_max, rough_y_min = max(data_values)*(1+self.data_edge_buffer), min(data_values)*(1-self.data_edge_buffer)
+    rough_y_max, rough_y_min = max(data_values), min(data_values)
     #Finds tick numbers and intervals which are intuitive and closest to the desired number of ticks
-    y_max, y_min, tick_interval, num_ticks = self.getTickInterval(rough_y_max, rough_y_min)
+    y_max, y_min, tick_interval, num_ticks, scale = self.getTickInterval(rough_y_max, rough_y_min)
     y_range = y_max-y_min
     if y_range == 0:
       y_range = .00001
@@ -126,17 +128,17 @@ class XYGraph(Graph):
     for num in range(num_ticks):
       tick_locations.append((tick_origin[0], tick_origin[1]+distance_per_tick*num))
     tick_values = frange(y_min, y_max+tick_interval, tick_interval)
-    return tick_locations, tick_values, y_range
+    return tick_locations, tick_values, y_range, scale
 
   def getTickInterval(self, rough_max, rough_min):
     """
     Finds a good distance between each graph tick
     """
-    #TODO: Debug this
-    rough_range = rough_max-rough_min
+    rough_range = abs(rough_max-rough_min)
     #Finds about how large/small the scale of the graph should be
-    if -.00001 <= rough_range <= .00001:
+    if -.001 <= rough_range <= .001:
       rough_range = 1
+    #print("rough_range: {} rough_max: {} rough_min: {}".format(rough_range, rough_max, rough_min))
     scale = log(rough_range, 10)
     #Determines if scale is indecicive enough to check it rounded both up and down
     #This feature may be removed for efficency
@@ -145,12 +147,12 @@ class XYGraph(Graph):
       for scale in (floor(scale), ceil(scale)):
         choices.append(self.getTickIntervalAtScale(rough_max, rough_min, scale))
       if choices[0][4] < choices[1][4]:
-        real_max, real_min, best_interval, num_ticks, _ = choices[0]
+        real_max, real_min, best_interval, num_ticks, _, scale = choices[0]
       else:
-        real_max, real_min, best_interval, num_ticks, _ = choices[1]
+        real_max, real_min, best_interval, num_ticks, _, scale = choices[1]
     else:
-      real_max, real_min, best_interval, num_ticks, _ = self.getTickIntervalAtScale(rough_max, rough_min, round(scale))
-    return real_max, real_min, best_interval, floor(num_ticks)
+      real_max, real_min, best_interval, num_ticks, _, scale = self.getTickIntervalAtScale(rough_max, rough_min, round(scale))
+    return real_max, real_min, best_interval, floor(num_ticks), scale
 
   def getTickIntervalAtScale(self, rough_max, rough_min, scale):
     """
@@ -174,15 +176,13 @@ class XYGraph(Graph):
       deltas.append(delta_tick_num*delta_tick_num_weight+delta_buffer*delta_buffer_weight)
     choice_ind = deltas.index(min(deltas))
     real_max, real_min, interval, num_ticks = choices[choice_ind]
-    return real_max, real_min, interval, num_ticks, min(deltas)
+    return real_max, real_min, interval, num_ticks, min(deltas), scale
 
   def render(self):
     """
     Renders the graph's current geometry to self.image
     Returns points, strings, and locations required to draw the graph
     """
-    self.points = []
-    self.strings = []
     current_time = time()
     self.clearImage()
     graph_start_time = self.findGraphStartTime(current_time)
@@ -190,8 +190,9 @@ class XYGraph(Graph):
     self.drawOutline(graph_start_time)
     data = self.getReleventData(graph_start_time)
     data_values = self.getReleventData(graph_start_time).values()
-    y_tick_locations, y_tick_values, y_tick_range = self.placeYTicks(data_values)
-    self.drawTicks(graph_start_time, y_tick_locations, y_tick_values)
+    y_tick_locations, y_tick_values, y_tick_range, scale = self.placeYTicks(data_values)
+    self.drawStaticLabels()
+    self.drawTicks(graph_start_time, y_tick_locations, y_tick_values, scale)
     self.plotData(data, graph_start_time, y_tick_range, tick_min=min(y_tick_values))
     return self.points, self.strings
   
@@ -199,6 +200,17 @@ class XYGraph(Graph):
     """
     Renders the graph's state at the given time
     """
+    self.clearImage()
+    graph_start_time = self.findGraphStartTime(current_time)
+    #Draws the static parts of the graph, i.e. names, edges
+    self.drawOutline(graph_start_time)
+    data = self.getReleventData(graph_start_time)
+    data_values = self.getReleventData(graph_start_time).values()
+    y_tick_locations, y_tick_values, y_tick_range, scale = self.placeYTicks(data_values)
+    self.drawStaticLabels()
+    self.drawTicks(graph_start_time, y_tick_locations, y_tick_values, scale)
+    self.plotData(data, graph_start_time, y_tick_range, tick_min=min(y_tick_values))
+    return self.points, self.strings
 
   def findGraphStartTime(self, current_time):
     best_time = current_time-(self.x_range)
@@ -218,6 +230,7 @@ class XYGraph(Graph):
     Returns the image to a blank state
     """
     self.points = []
+    self.strings = []
 
   def drawOutline(self, graph_start_time):
     """
@@ -233,12 +246,12 @@ class XYGraph(Graph):
     for line in self.edge_locations:
       self.points.append(line)
 
-  def drawTicks(self, graph_start_time, y_tick_locations, y_tick_values):
+  def drawTicks(self, graph_start_time, y_tick_locations, y_tick_values, scale):
     """
     Draws ticks on the graph
     """
     self.drawTickMarks(y_tick_locations)
-    self.drawTickLabels(graph_start_time, y_tick_locations, y_tick_values)
+    self.drawTickLabels(graph_start_time, y_tick_locations, y_tick_values, scale)
 
   def drawTickMarks(self, y_tick_locations):
     """
@@ -249,26 +262,35 @@ class XYGraph(Graph):
     for y_tick in y_tick_locations:
       self.points.append((y_tick, (y_tick[0]+self.tick_length, y_tick[1])))
 
-  def drawTickLabels(self, graph_start_time, y_tick_locations, y_labels):
+  def drawTickLabels(self, graph_start_time, y_tick_locations, y_labels, scale):
     """
     Draws labels near the tick marks
     """
-    #Adjusts the time values to make them more readable
+    #Generates x time values
     x_labels = frange(graph_start_time-self.start_time, graph_start_time+self.x_range-self.start_time, self.x_tick_space)
     for ind, x_tick_location in enumerate(self.x_tick_locations):
       #TODO: Fix these formulas for draw location
       draw_location = x_tick_location[0], x_tick_location[1]-self.number_spacing
       self.strings.append((draw_location, str(round(x_labels[ind], self.decimals)+1)))
     for ind, y_tick_location in enumerate(y_tick_locations):
-      draw_location = y_tick_location[0]-self.number_spacing, y_tick_location[1]
-      self.strings.append((draw_location, str(round(y_labels[ind], self.decimals))))
+      draw_location = y_tick_location[0]-(self.number_spacing*2), y_tick_location[1]
+      if -1 < scale < 4:
+        #If scale is within a range which will not cause numbers to be too big
+        #show it without any transformation
+        string = str(round(y_labels[ind]))
+      else:
+        #otherwise, show it in scientific notation
+        string = str(round(y_labels[ind]/10**scale))+"E{}".format(scale)
+      self.strings.append((draw_location, string))
 
   def drawStaticLabels(self):
     """
     Draws text labels which do not change dynamiclly
     """
-    #Generates numeric labels for time and value
-    self.strings.append(((self.graph_origin[0]-self.buffer_size*2, self.graph_origin[1]+self.graph_size[1]/1.5), makeVertical(self.y_axis_name)))
+    #Adds graph name tags
+    self.strings.append(((self.graph_origin[0]+self.buffer_size*2, self.graph_origin[1]+self.graph_size[1]*1.2), self.name))
+    #Adds axis tags
+    self.strings.append(((self.graph_origin[0]-self.buffer_size*2.7, self.graph_origin[1]+self.graph_size[1]/1.5), makeVertical(self.y_axis_name)))
     self.strings.append(((self.graph_origin[0]+self.graph_size[0]/2, self.graph_origin[1]-self.buffer_size*2), self.x_axis_name))
 
   def plotData(self, data, graph_start_time, y_tick_range, tick_min):
@@ -315,14 +337,14 @@ class XYGraph(Graph):
     Creates a new datapoint at the current time with the given value
     """
     #TODO: Keep this from being a memory leak
-    self.data[time()] = y 
+    self.data[time()] = y
 
 class PolarGraph(Graph):
-  def __init__(self, name = "graph", location = (0, 0),
-               graph_size = (.9, .9), magnitude_range = (0, 10),
-               magnitude_axis_name = "Magnitude", directional_axis_name = "Rotation",
-               buffer_size = .1, magnitude_tick_space = 2, directional_tick_space = pi/4,
-               tick_length = .1, number_spacing = .1, decimals = 1):
+  def __init__(self, name = "graph", location = (0, 0), points_per_circle = 40,
+               radius = 1, magnitude_range = 10, magnitude_axis_name = "Magnitude",
+               directional_axis_name = "Rotation", buffer_size = .1,
+               magnitude_tick_space = 2, directional_tick_space = pi/4, tick_length = .1,
+               number_spacing = .1, decimals = 1, dynamic_magnitude_ticks = False):
     """
     Initiates a polar graph
     """
@@ -332,26 +354,28 @@ class PolarGraph(Graph):
     #The location the graph will render on the screen
     self.location = location
     self.data = (0, 0)
-    self.size = graph_size
     #The number of x/y values to display on the graph
     self.magnitude_range = magnitude_range
     #The displayed names of the axes
     self.magnitude_axis_name = magnitude_axis_name
     self.directional_axis_name = directional_axis_name
     #The size of the graph, without labels
-    self.graph_size = graph_size
+    self.radius = radius
     #The size of the buffer which hangs to the left and bottom of the graph
     #This number is added to both dimensions in graph_size to create the actual resolution
     self.buffer_size = buffer_size
-    self.resolution = graph_size[0]+buffer_size, graph_size[1]+buffer_size
     #Number of values between each tick on the graphs
     self.magnitude_tick_space = magnitude_tick_space
     self.directional_tick_space = directional_tick_space
-    #Saves edge and tick locations since they are constant unless explicitly changed
-    self.x_distance_per_value = 0
-    self.y_distance_per_value = 0
-    self.graph_origin = (self.location[0]+self.buffer_size, self.location[1]+self.buffer_size)
-    self.circle_points = self.calculateCirclePoints()
+    #Whether magnitude ticks will be generated dynamically or not
+    self.dynamic_magnitude_ticks = dynamic_magnitude_ticks
+    #The radii of each of the different magnitude ticks
+    self.magnitude_tick_radii = []
+    #Screen distance units per graph value
+    self.distance_per_value = 0
+    self.points_per_circle = points_per_circle
+    self.origin = (self.location[0]+self.buffer_size, self.location[1]+self.buffer_size)
+    self.edge_locations, self.angular_tick_locations = self.calculateOutlineLocations()
     #Space between the graph and number labels in pixels
     self.number_spacing = number_spacing
     #Decimals to round numeric values to
@@ -361,30 +385,110 @@ class PolarGraph(Graph):
     #Length of each tick
     self.tick_length = tick_length
     #Each list within the points list is a line/polyline
-    #Each tuple in the list is a point
+    #Each tuple in the nested list is a point
     self.points = []
     #Strings are stored as (location, string) pairs
     self.strings = []
+    if not dynamic_magnitude_ticks:
+      self.magnitude_ticks = self.calculateStaticMagnitudeTickLocations()
 
-  def calculateCirclePoints(self):
+  def calculateOutlineLocations(self):
     """
-    Finds the location of the static lines used to draw the circle outline
+    Finds the location of the static lines and ticks used to draw the circle outline
+    """
+    edge_location = calculateCirclePoints(self.radius, self.points_per_circle, self.origin)
+    angular_tick_locations = self.calculateAngularTickLocations()
+    return edge_location, angular_tick_locations
+
+  def calculateAngularTickLocations(self):
+    """
+    Finds the location of non-dynamic angular tick marks
+    """
+    ticks = []
+    angles = frange(0, 2*pi, self.directional_tick_space)
+    for angle in angles:
+      ticks.append(self.origin, (self.origin[0]+cos(angle), self.origin[1]+sin(angle)))
+    return ticks
+
+  def calculateStaticMagnitudeTickLocations(self):
+    """
+    Calculates magnitude tick ring locations
+    """
+    locations = []
+    self.distance_per_value = self.radius/self.magnitude_range
+    #Magnitude tick radii in graph values
+    self.magnitude_tick_radii = frange(self.magnitude_tick_space,
+                                       self.magnitude_range+self.magnitude_tick_space,
+                                       self.magnitude_tick_space)
+    for radius in self.magnitude_tick_radii:
+      locations.append(calculateCirclePoints(radius*self.distance_per_value, self.points_per_circle, self.origin))
+    return locations
+  
+  def calculateDynamicMagnitudeTickLocations(self):
+    """
+    Calculates magnitude tick ring locations dynamically
+    Not yet implemented, possibly not needed
     """
 
   def render(self):
     """
     Renders the graph
     """
+    self.points = []
+    self.drawOutline()
+    self.drawTicks()
+    self.drawLabels()
     
   def drawOutline(self):
     """
     Draws the outline of the graph
     """
+    self.points += self.edge_locations, self.angular_tick_locations
 
-  def drawTicks(self):
+  def drawTicks(self, data = None):
     """
-    Draws ticks in their dynamic locations
+    Draws ticks
     """
+    if self.dynamic_magnitude_ticks:
+      raise NotImplementedError("Dynamic tick generation has not been implemented for polar graphs")
+    else:
+      self.points += self.magnitude_ticks
+  
+  def drawLabels(self):
+    """
+    Draws the axis names and tick labels
+    """
+    self.strings.append((0, self.magnitude_range*self.distance_per_value+self.number_spacing*2), self.name)
+    angular_labels, magnitude_labels = self.drawAngularLabels(), self.drawMagnitudeLabels()
+    self.strings += angular_labels
+    self.strings += magnitude_labels
+
+  def drawAngularLabels(self):
+    labels = []
+    angles = frange(0, 2*pi, self.directional_tick_space)
+    for angle in angles:
+      labels.append(((self.radius+self.number_spacing)*cos(angle),
+                     (self.radius+self.number_spacing)*sin(angle)),
+                    str(round(angle, self.decimals)))
+    return labels
+
+  def drawMagnitudeLabels(self):
+    labels = []
+    label_texts = frange(self.magnitude_tick_space,
+                         self.magnitude_range+self.magnitude_tick_space,
+                         self.magnitude_tick_space)
+    for ind, radius in enumerate(self.magnitude_tick_radii):
+      labels.append((radius-self.number_spacing+self.origin[0], self.origin[1]), label_texts[ind])
+    return labels
+
+  def plotData(self):
+    """
+    Draws the data vector
+    """
+    data_point = [self.data[0]*cos(self.data[1]), self.data[0]*sin(self.data[1])]
+    data_point[0] *= self.distance_per_value
+    data_point[1] *= self.distance_per_value
+    self.points.append(((0, 0), data_point))
 
   def update(self, magnitude, direction):
     """
@@ -392,6 +496,7 @@ class PolarGraph(Graph):
     Since polar graphs only render one piece of data at a time
     This will override any former data in the graph
     """
+    self.data = magnitude, direction
 
 def makeVertical(text):
   """
@@ -412,3 +517,9 @@ def frange(x, y, jump = 1):
     nums.append(x)
     x += jump
   return nums
+
+def calculateCirclePoints(radius, num_points, origin = (0, 0,)):
+  points = []
+  for angle in frange(0, 2*pi, (2*pi)/num_points):
+    points.append((radius*cos(angle), radius*(sin(angle))))
+  return points

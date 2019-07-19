@@ -4,10 +4,11 @@ primitivePhysics.py: Simple version of swerve drive physics engine
 """
 
 import json
-from math import atan2, sqrt, sin, cos, pi
+from math import atan2, cos, pi, sin, sqrt
 from time import time
 
 from Physics.vectors import Vector
+
 
 class Swerve:
   def __init__(self, start_position = (0, 0, 0)):
@@ -36,7 +37,7 @@ class Swerve:
                     "frswerve": Vector(0, 0),
                     "brswerve": Vector(0, 0),
                     "flswerve": Vector(0, 0),
-                    "brswerve": Vector(0, 0),
+                    "blswerve": Vector(0, 0),
                     "frame": Vector(0, 0)}
     #Resistance vectors which will not accelerate the robot in the opposite direction
     self.resistance_vectors = {"frwheel": Vector(0, 0),
@@ -46,7 +47,7 @@ class Swerve:
                                "frswerve": Vector(0, 0),
                                "brswerve": Vector(0, 0),
                                "flswerve": Vector(0, 0),
-                               "brswerve": Vector(0, 0),
+                               "blswerve": Vector(0, 0),
                                "frame": Vector(0, 0)}
     self.wheel_vectors = {"frwheel": Vector(0, 0),
                           "brwheel": Vector(0, 0),
@@ -275,7 +276,7 @@ class Swerve:
     self.positions["blswerve"] = direction
 
 def loadParams():
-  f = open("Physics\params.json")
+  f = open("Physics/params.json")
   params = json.load(f)
   f.close()
   return params
