@@ -4,7 +4,7 @@ graphs.py: Generates a graph image based off two related axes of data
 """
 
 from collections import OrderedDict
-from math import ceil, cos, floor, log, pi, sin
+from math import ceil, cos, floor, log, pi, sin, sqrt
 from time import time
 
 from PIL import Image, ImageColor, ImageDraw
@@ -341,9 +341,9 @@ class XYGraph(Graph):
 
 class PolarGraph(Graph):
   def __init__(self, name = "graph", location = (0, 0), points_per_circle = 40,
-               radius = 1, magnitude_range = 10, magnitude_axis_name = "Magnitude",
-               directional_axis_name = "Rotation", buffer_size = .1,
-               magnitude_tick_space = 2, directional_tick_space = pi/4, tick_length = .1,
+               radius = .3, magnitude_range = 1.2, magnitude_axis_name = "Magnitude",
+               directional_axis_name = "Rotation", buffer_size = .04,
+               magnitude_tick_space = .4, directional_tick_space = pi/8, tick_length = .1,
                number_spacing = .1, decimals = 1, dynamic_magnitude_ticks = False):
     """
     Initiates a polar graph
@@ -354,7 +354,7 @@ class PolarGraph(Graph):
     #The location the graph will render on the screen
     self.location = location
     self.data = (0, 0)
-    #The number of x/y values to display on the graph
+    #The maximum magnitude
     self.magnitude_range = magnitude_range
     #The displayed names of the axes
     self.magnitude_axis_name = magnitude_axis_name
@@ -374,7 +374,9 @@ class PolarGraph(Graph):
     #Screen distance units per graph value
     self.distance_per_value = 0
     self.points_per_circle = points_per_circle
-    self.origin = (self.location[0]+self.buffer_size, self.location[1]+self.buffer_size)
+    self.origin = self.location
+    if not dynamic_magnitude_ticks:
+      self.magnitude_ticks = self.calculateStaticMagnitudeTickLocations()
     self.edge_locations, self.angular_tick_locations = self.calculateOutlineLocations()
     #Space between the graph and number labels in pixels
     self.number_spacing = number_spacing
@@ -389,8 +391,6 @@ class PolarGraph(Graph):
     self.points = []
     #Strings are stored as (location, string) pairs
     self.strings = []
-    if not dynamic_magnitude_ticks:
-      self.magnitude_ticks = self.calculateStaticMagnitudeTickLocations()
 
   def calculateOutlineLocations(self):
     """
@@ -407,7 +407,8 @@ class PolarGraph(Graph):
     ticks = []
     angles = frange(0, 2*pi, self.directional_tick_space)
     for angle in angles:
-      ticks.append(self.origin, (self.origin[0]+cos(angle), self.origin[1]+sin(angle)))
+      ticks.append((((self.origin[0]-self.radius*cos(angle)), (self.origin[1]-self.radius*sin(angle))),
+                   ((self.origin[0]+self.radius*cos(angle)), (self.origin[1]+self.radius*sin(angle)))))
     return ticks
 
   def calculateStaticMagnitudeTickLocations(self):
@@ -418,7 +419,7 @@ class PolarGraph(Graph):
     self.distance_per_value = self.radius/self.magnitude_range
     #Magnitude tick radii in graph values
     self.magnitude_tick_radii = frange(self.magnitude_tick_space,
-                                       self.magnitude_range+self.magnitude_tick_space,
+                                       self.magnitude_range,
                                        self.magnitude_tick_space)
     for radius in self.magnitude_tick_radii:
       locations.append(calculateCirclePoints(radius*self.distance_per_value, self.points_per_circle, self.origin))
@@ -435,15 +436,19 @@ class PolarGraph(Graph):
     Renders the graph
     """
     self.points = []
+    self.strings = []
     self.drawOutline()
     self.drawTicks()
     self.drawLabels()
+    self.plotData()
+    return self.points, self.strings
     
   def drawOutline(self):
     """
     Draws the outline of the graph
     """
-    self.points += self.edge_locations, self.angular_tick_locations
+    self.points.append(self.edge_locations)
+    self.points += self.angular_tick_locations
 
   def drawTicks(self, data = None):
     """
@@ -458,7 +463,7 @@ class PolarGraph(Graph):
     """
     Draws the axis names and tick labels
     """
-    self.strings.append((0, self.magnitude_range*self.distance_per_value+self.number_spacing*2), self.name)
+    self.strings.append(((0, self.magnitude_range*self.distance_per_value+self.number_spacing*2), self.name))
     angular_labels, magnitude_labels = self.drawAngularLabels(), self.drawMagnitudeLabels()
     self.strings += angular_labels
     self.strings += magnitude_labels
@@ -467,28 +472,31 @@ class PolarGraph(Graph):
     labels = []
     angles = frange(0, 2*pi, self.directional_tick_space)
     for angle in angles:
-      labels.append(((self.radius+self.number_spacing)*cos(angle),
-                     (self.radius+self.number_spacing)*sin(angle)),
-                    str(round(angle, self.decimals)))
+      labels.append((((self.radius+self.number_spacing)*cos(angle)+self.origin[0]-.07,
+                      (self.radius+self.number_spacing)*sin(angle)+self.origin[1]-.04),
+                      str(round(angle, self.decimals))))
     return labels
 
   def drawMagnitudeLabels(self):
     labels = []
     label_texts = frange(self.magnitude_tick_space,
-                         self.magnitude_range+self.magnitude_tick_space,
+                         self.magnitude_range,
                          self.magnitude_tick_space)
     for ind, radius in enumerate(self.magnitude_tick_radii):
-      labels.append((radius-self.number_spacing+self.origin[0], self.origin[1]), label_texts[ind])
+      labels.append(((radius-self.number_spacing+self.origin[0], self.origin[1]), str(label_texts[ind])))
     return labels
 
   def plotData(self):
     """
     Draws the data vector
     """
-    data_point = [self.data[0]*cos(self.data[1]), self.data[0]*sin(self.data[1])]
+    magnitude, direction = self.data
+    data_point = [magnitude*cos(direction), magnitude*sin(direction)]
     data_point[0] *= self.distance_per_value
     data_point[1] *= self.distance_per_value
-    self.points.append(((0, 0), data_point))
+    data_point[0] += self.origin[0]
+    data_point[1] += self.origin[1]
+    self.points.append((self.origin, data_point))
 
   def update(self, magnitude, direction):
     """
@@ -518,8 +526,8 @@ def frange(x, y, jump = 1):
     x += jump
   return nums
 
-def calculateCirclePoints(radius, num_points, origin = (0, 0,)):
+def calculateCirclePoints(radius, num_points, origin = (0, 0)):
   points = []
-  for angle in frange(0, 2*pi, (2*pi)/num_points):
-    points.append((radius*cos(angle), radius*(sin(angle))))
+  for angle in frange(0, 2*pi+(2*pi)/num_points, (2*pi)/num_points):
+    points.append((radius*cos(angle)+origin[0], radius*(sin(angle))+origin[1]))
   return points

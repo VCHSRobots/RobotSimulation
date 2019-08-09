@@ -80,8 +80,8 @@ class Simulator(ShowBase):
     #Creates a graph of y vectors
     self.graphs = graph_objs
     #Adds dummy value to graph to prevent crash
-    for graph_name in self.graphs:
-      self.graphs[graph_name].update(0)
+    self.graphs["y_graph"].update(0)
+    self.graphs["vector_graph"].update(0, 0)
 
   def walkPanda(self, task):
     x = self.joystick_readings[0]["axes"]["left_x"]
@@ -113,6 +113,9 @@ class Simulator(ShowBase):
     self.setPandaToLocation()
     self.pandaActor.setHpr(angle+180, 0, 0)
     self.graphs["y_graph"].update(self.physics.velocities["frame"][1])
+    magnitude = sqrt(x**2+y**2)
+    direction = atan2(y, x)
+    self.graphs["vector_graph"].update(magnitude, direction)
     return Task.cont
 
   def setPandaToLocation(self):
@@ -143,8 +146,6 @@ class Simulator(ShowBase):
                                                     round(self.physics.position[2], 4))
       self.textboxes["frvector_value"]["text"] = frvector
       self.lines = []
-      #TODO: Make app integration with graph module smoother
-      #TODO: Test me!
       for graph_name in self.graphs:
         lines, strings = self.graphs[graph_name].render()
         #Splits the lines into pairs of points and assigns them to self.lines
@@ -161,22 +162,6 @@ class Simulator(ShowBase):
         for ind, val in enumerate(strings):
           location, string = val
           self.textboxes["{}_{}".format(graph_name, str(ind))] = {"location": location, "text": string}
-      # lines, strings = self.y_graph.render()
-      # #Splits the lines into pairs of points and assigns them to self.lines
-      # self.lines = []
-      # for line in lines:
-      #   self.lines += pairPoints(line)
-      # #Processes strings into textboxes
-      # #Clears all graph generated strings from textboxes
-      # deleted = []
-      # for key in self.textboxes:
-      #   if self.y_graph.name in key:
-      #     deleted.append(key)
-      # for key in deleted:
-      #   self.textboxes.pop(key)
-      # for ind, val in enumerate(strings):
-      #   location, string = val
-      #   self.textboxes["{}_{}".format(self.y_graph.name, str(ind))] = {"location": location, "text": string}
       self.manageTextNodes()
       self.renderText()
       self.manageGeometry()
@@ -281,5 +266,6 @@ def pairPoints(points, closed=False):
       pairs.append((point, points[ind+1]))
   return pairs
 
-app = Simulator(textboxes={"frvector_label": {}, "frvector_value": {"location": (.4, .7)}}, graph_objs = {"y_graph": graphs.XYGraph(location=(-.4,-.4))})
+graphs = {"y_graph": graphs.XYGraph(location=(-.4,-.4)), "vector_graph": graphs.PolarGraph(location=(-.8, -.5))}
+app = Simulator(textboxes={"frvector_label": {}, "frvector_value": {"location": (.4, .7)}}, graph_objs = graphs)
 app.run()
