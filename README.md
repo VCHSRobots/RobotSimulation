@@ -29,8 +29,8 @@ Once the right stuff is installed and configured for your system, try:
 
 ## Credits
 
-Holiday Pettijohn -- Lead Student, 2019
-Dalbert Brandon   -- Mentor
+	Holiday Pettijohn -- Lead Student, 2019
+	Dalbert Brandon   -- Mentor
 
 
 
