@@ -1,0 +1,14 @@
+Swerve Bot Simulation Notes
+Summer 2019
+
+1. The zero datum for the Z axis is the center of the robot wheels, not the surface of the floor.
+
+2. The world X axis runs along the long dimension of the field, the Y axis is positive towards the wall marked "Epic 4415", and Z is up.
+
+3. The simulation visual elements where made with Blender 2.8.  The approximate units are 0.1 meters per inch.  That is, in blender, a 4" diameter wheel is about .4 meters.  The default robot uses 4" wheels, and is about 24x24 inches.
+
+4. To save the models from blender, use the *.obj format (wavefront), and use the following settings:  Selection Only, Include Edges, Write Normals, Include UVs, Write Materials, Objects as OBJ Objects, Scale=1.0, Path Mode=Absolute, Forward=Y Forward, Up= Z Up.
+
+5. The simulation uses two lights... these must be added to make anything look okay.
+
+
