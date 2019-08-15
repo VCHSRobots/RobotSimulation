@@ -6,6 +6,7 @@ from math import pi, sin, cos
 from direct.task import Task
 from panda3d.core import PointLight 
 from panda3d.core import VBase4
+from skid import SkidTrack
 import math
 
 class SwerveBot:
@@ -21,6 +22,7 @@ class SwerveBot:
 		self.frame.reparentTo(render)
 		self.frame.setPos(0.0, 0.0, 0.0)
 		self.wheels = []  
+		self.skids = []
 		locs = [(-1.0, -1.0), (-1.0, 1.0), (1.0, 1.0), (1.0, -1.0)]
 		wnames = ["Back-Right", "Back-Left", "Front-Left", "Front-Right"]
 		for i in range(4):
@@ -38,6 +40,8 @@ class SwerveBot:
 			caster_angle = 0.0
 			wheel_turns = 0.0
 			self.wheels.append((caster, wheel, name))
+			self.skids.append(SkidTrack(nrects=300, wheel_width=0.2, zpos=-0.4))
+
 
 	def setPos(self, x, y, angle):
 		self.frame.setX(x)
@@ -68,6 +72,16 @@ class SwerveBot:
 		c4, w4, n4 = self.wheels[3]
 		w4.setR(a4)
 
+	def updateSkidMarks(self):
+		iskid = 0
+		for w in self.wheels:
+			#w = self.wheels[2]
+			caster, wheel, name = w 
+			x, y, angle = caster.getX(render), caster.getY(render), caster.getH(render)
+			self.skids[iskid].addPoint(x, y, angle, 1.0)
+			iskid += 1
+
+
 	def toggleAutoDrive(self):
 		if self.autoDriving:
 			self.turnOffAutoDrive()
@@ -93,12 +107,13 @@ class SwerveBot:
 		x = math.fmod(task.time + self.startPos, 20.0)
 		a = math.fmod(task.time * 10, 360.0)
 		w = task.time * 0.5
-		#print("DeltaX", x, task.id)
 		if x > 10:
 			x = 20 - x
 		self.setPos(x, 0.0, a)
 		self.setCasterAngles(a, a+10, a+30, a+60)
 		self.setWheelTurns(w, w*1.25, w*-0.75, w*2.0)
+		self.updateSkidMarks()
+
 		return Task.cont
 
 
