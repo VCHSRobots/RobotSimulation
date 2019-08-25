@@ -9,7 +9,10 @@ from panda3d.core import VBase4
 from panda3d.core import Mat4
 from swervebot import SwerveBot
 from cones import Cones
+from skid import SkidTrack
+from overlay import Overlay
 from gamepad_logitech import GamePad_Logitech
+import sys
 
 class RobotSim (ShowBase) :
 	def __init__(self):
@@ -18,8 +21,8 @@ class RobotSim (ShowBase) :
 		# Reparent the model to render.
 		self.scene.reparentTo(self.render)
 		self.scene.setPos(0, 0, 0)
-		self.insertLight("MainLight", 0, 0, 75)
-		self.insertLight("ExtraLight1", -50, 0, 75)
+		self.insertLight("MainLight", 25, 0, 75)
+		self.insertLight("ExtraLight1", -25, 0, 75)
 		self.resetSim()
 
 		self.robot = SwerveBot()
@@ -27,13 +30,22 @@ class RobotSim (ShowBase) :
 
 		self.setupCones()
 
+		self.overlay = Overlay()
+
 		self.gamepad = GamePad_Logitech()
 		self.gamepad.setupGamePad(self)
 		#self.gamepad.startReportLoop()
 
+		self.skidtrack = SkidTrack(nrects=100, wheel_width=1, zpos=4)
+		self.skid_pos = (-5, -5)
+
+		self.counter = 0
 		self.accept('r', self.reportStatus)
 		self.accept('i', self.resetSim)
 		self.accept('a', self.robot.toggleAutoDrive)
+		self.accept('c', self.count)
+		self.accept('s', self.skidtrackAdd)
+		self.accept('escape', sys.exit)
 
 	def resetSim(self):
 		base.disableMouse()
@@ -84,6 +96,17 @@ class RobotSim (ShowBase) :
 		h,p,r = self.camAngle
 		base.camera.setPos(x, y, z)
 		base.camera.setHpr(h, p, r)
+
+	def count(self):
+		self.counter += 1
+		txt = "%d" % self.counter 
+		self.overlay.setText(1, txt)
+
+	def skidtrackAdd(self):
+		x, y = self.skid_pos
+		x += 1
+		self.skid_pos = (x, y)
+		self.skidtrack.addPoint(x, y, 0.0, 1.0)
 
 app = RobotSim()
 app.run()
