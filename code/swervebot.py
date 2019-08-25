@@ -46,13 +46,13 @@ class SwerveBot:
 
 	def setCasterAngles(self, a1, a2, a3, a4):
 		c1, w1, n1 = self.wheels[0]
-		c1.setH(a1)
+		c1.setH(a1+90)
 		c2, w2, n2 = self.wheels[1]
-		c2.setH(a2)
+		c2.setH(a2+90)
 		c3, w3, n3 = self.wheels[2]
-		c3.setH(a3)
+		c3.setH(a3+90)
 		c4, w4, n4 = self.wheels[3]
-		c4.setH(a4)
+		c4.setH(a4+90)
 
 	def setWheelTurns(self, t1, t2, t3, t4):
 		a1 = math.fmod(t1, 1.0) * 360.0

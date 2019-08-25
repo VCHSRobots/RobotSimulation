@@ -75,6 +75,10 @@ class Swerve:
                        "brswerve": [0, 0],
                        "flswerve": [0, 0],
                        "blswerve": [0, 0],
+                       "frwheel_rolling": 0,
+                       "brwheel_rolling": 0,
+                       "flwheel_rolling": 0,
+                       "blwheel_rolling": 0,
                        "frame": [0, 0]}
 
   def update(self):
@@ -197,6 +201,8 @@ class Swerve:
       delta_y = vector.magnitude*delta_time*sin(self.vectors[wheel].direction)
       self.velocities[wheel][0] += delta_x
       self.velocities[wheel][1] += delta_y
+      #TODO: This is not derived from real physics
+      self.velocities["{}_rolling".format(wheel)] = (-self.motor_velocities[wheel]-(self.velocities["frame"][0]**2+self.velocities["frame"][1]**2))*.4
       if self.vectors[wheel].magnitude < self.resistance_vectors[wheel].magnitude:
         if ((delta_x > 0 and self.velocities[wheel][0] > 0)
            or (delta_x < 0 and self.velocities[wheel][0] < 0)):
@@ -232,16 +238,24 @@ class Swerve:
     Current unused
     """
 
+  def updateWheelPositions(self, delta_time):
+    self.positions["frwheel"] += self.velocities["frwheel_rolling"]*delta_time
+    self.positions["flwheel"] += self.velocities["flwheel_rolling"]*delta_time
+    self.positions["brwheel"] += self.velocities["brwheel_rolling"]*delta_time
+    self.positions["blwheel"] += self.velocities["blwheel_rolling"]*delta_time
+
+  def updateFramePositions(self, delta_time):
+    self.position[0] += self.velocities["frame"][0]*delta_time
+    self.position[1] += self.velocities["frame"][1]*delta_time
+    self.position[2] += self.z_velocity*delta_time
+
   def updatePositions(self, delta_time):
     """
     Updates the wheel and robot positions based on vector data
     """
-    #TODO: Account for each wheel rotating individually as opposed to
-    #treating their forces as coming from robot's the center of gravity
     #Calculate robot position change
-    self.position[0] += self.velocities["frame"][0]*delta_time
-    self.position[1] += self.velocities["frame"][1]*delta_time
-    self.position[2] += self.z_velocity*delta_time
+    self.updateFramePositions(delta_time)
+    self.updateWheelPositions(delta_time)
 
   def sendControls(self, x = 0, y = 0, z = 0, rnd = 2):
     """
@@ -256,8 +270,9 @@ class Swerve:
     direction = atan2(y, x)
     twist = z
     self.arcadeDrive(twist, magnitude)
-    self.swerve_target = direction
-    self.swerveWheels(direction)
+    if abs(x+y) >= .1:
+      self.swerve_target = direction
+      self.swerveWheels(direction)
   
   def arcadeDrive(self, x, y):
     self.motor_velocities["frwheel"] = y+x

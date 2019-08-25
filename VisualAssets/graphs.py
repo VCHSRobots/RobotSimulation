@@ -27,6 +27,11 @@ class Graph:
     Adds data to the graph
     """
 
+  def dummyUpdate(self):
+    """
+    Dummy update to prevent crash due to no data
+    """
+
 class XYGraph(Graph):
   def __init__(self, name = "graph", location = (0, 0), graph_size = (.9, .9),
                x_tick_space = 2, ideal_num_ticks = 8, ideal_tick_buffer = .1,
@@ -339,6 +344,9 @@ class XYGraph(Graph):
     #TODO: Keep this from being a memory leak
     self.data[time()] = y
 
+  def dummyUpdate(self):
+    self.data[time()] = 0
+
 class PolarGraph(Graph):
   def __init__(self, name = "graph", location = (0, 0), points_per_circle = 40,
                radius = .3, magnitude_range = 1.2, magnitude_axis_name = "Magnitude",
@@ -505,6 +513,9 @@ class PolarGraph(Graph):
     This will override any former data in the graph
     """
     self.data = magnitude, direction
+
+  def dummyUpdate(self):
+    self.data = (0, 0)
 
 def makeVertical(text):
   """
